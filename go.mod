@@ -1,4 +1,4 @@
-module commonuser
+module github.com/lefalya/commonuser
 
 go 1.23.7
 
