@@ -2,6 +2,7 @@ package commonuser
 
 import (
 	"encoding/json"
+	"github.com/lefalya/item"
 	"github.com/lefalya/pageflow"
 	"time"
 )
@@ -17,19 +18,20 @@ type AssociatedAccount struct {
 	Provider string `json:"provider,omitempty" db:"-"`
 }
 
-type Account struct {
+type Base struct {
 	Sub               string              `json:"sub,omitempty" db:"-"`
-	RandID            string              `json:"randId" bson:"randid"`
-	UUID              string              `json:"uuid,omitempty" db:"uuid"`
 	Name              string              `json:"name,omitempty" db:"name"`
 	Username          string              `json:"username,omitempty" db:"username"`
 	Password          string              `json:"-" db:"password"`
 	Email             string              `json:"email,omitempty" db:"email"`
 	Avatar            string              `json:"avatar,omitempty" db:"avatar"`
-	CreatedAt         time.Time           `json:"createdAt,omitempty" db:"createdAt"`
-	UpdatedAt         time.Time           `json:"updatedAt,omitempty" db:"updatedAt"`
 	AssociatedAccount []AssociatedAccount `json:"associatedAccount,omitempty" db:"-"`
 	Suspended         bool                `json:"suspended,omitempty" db:"suspended"`
+}
+
+type Account struct {
+	*item.Foundation
+	Base
 }
 
 func (c *Account) UnmarshalJSON(data []byte) error {
@@ -80,7 +82,7 @@ func (c Account) MarshalJSON() ([]byte, error) {
 
 type AccountMongo struct {
 	*pageflow.MongoItem `bson:",inline" json:",inline"`
-	*Account            `bson:",inline" json:",inline"`
+	*Base               `bson:",inline" json:",inline"`
 }
 
 // TODO: implement AccountSQL
