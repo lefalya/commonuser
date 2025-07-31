@@ -3,17 +3,9 @@ package lib
 import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lefalya/item"
-	"github.com/lefalya/pageflow"
 	"github.com/matthewhartstonge/argon2"
 	"time"
 )
-
-type ResetPasswordRequest struct {
-	*pageflow.SQLItem `bson:",inline" json:",inline"`
-	Email             string `db:"email"`
-	Token             string `db:"token"`
-	ExpiredAt         int64  `db:"expirationdate"`
-}
 
 type UserClaims struct {
 	UUID              string    `json:"uuid"` // user uuid

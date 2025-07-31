@@ -2,9 +2,47 @@ package lib
 
 import (
 	"database/sql"
+	"github.com/lefalya/commonuser/definition"
 	"github.com/lefalya/pageflow"
 	"github.com/redis/go-redis/v9"
+	"time"
 )
+
+type ResetPasswordRequestSQL struct {
+	*pageflow.SQLItem `bson:",inline" json:",inline"`
+	AccountUUID       string    `db:"accountuuid"`
+	Token             string    `db:"token"`
+	ExpiredAt         time.Time `db:"expiredat"`
+}
+
+func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
+	rpsql.AccountUUID = account.GetUUID()
+}
+
+func (rpsql *ResetPasswordRequestSQL) SetToken() {
+	rpsql.Token = pageflow.RandId()
+}
+
+func (rpsql *ResetPasswordRequestSQL) SetExpiredAt() {
+	rpsql.ExpiredAt = time.Now().Add(time.Hour * 48)
+}
+
+func (rpsql *ResetPasswordRequestSQL) Validate(token string) error {
+	time := time.Now().UTC()
+	if time.After(rpsql.ExpiredAt) {
+		return definition.RequestExpired
+	}
+	if rpsql.Token != token {
+		return definition.InvalidToken
+	}
+	return nil
+}
+
+func NewResetPasswordSQL() *ResetPasswordRequestSQL {
+	request := &ResetPasswordRequestSQL{}
+	pageflow.InitSQLItem(request)
+	return request
+}
 
 type ResetPasswordManagerSQL struct {
 	base       *pageflow.Base[AccountSQL]
@@ -12,21 +50,78 @@ type ResetPasswordManagerSQL struct {
 	entityName string
 }
 
-func (ar *ResetPasswordManagerSQL) FindRequest(email string) (*AccountSQL, error) {
-	query := "SELECT * FROM " + ar.entityName + "ResetPassword WHERE email = $1"
-	row := ar.db.QueryRow(query, email)
+func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
+	requestResetPassword := NewResetPasswordSQL()
+	requestResetPassword.SetAccountUUID(account)
+	requestResetPassword.SetToken()
+	requestResetPassword.SetExpiredAt()
 
+	tableName := ar.entityName + "ResetPassword"
+	query := `INSERT INTO $1 (uuid, randId, createdat, updatedat, accountuuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
+	_, errInsert := ar.db.Exec(
+		query,
+		tableName,
+		requestResetPassword.GetUUID(),
+		requestResetPassword.GetRandId(),
+		requestResetPassword.GetCreatedAt(),
+		requestResetPassword.GetUpdatedAt(),
+		requestResetPassword.AccountUUID,
+		requestResetPassword.Token,
+		requestResetPassword.ExpiredAt)
+
+	if errInsert != nil {
+		return nil, errInsert
+	}
+
+	return requestResetPassword, nil
 }
 
-func (ar *ResetPasswordManagerSQL) CreateRequest(email string) error {
+func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
+	tableName := ar.entityName + "ResetPassword"
+	query := "SELECT * FROM " + tableName + "ResetPassword WHERE accountuuid = $1"
+	row := ar.db.QueryRow(query, account.Email)
+	resetPasswordRequest := NewResetPasswordSQL()
+	err := row.Scan(
+		&resetPasswordRequest.SQLItem.UUID,
+		&resetPasswordRequest.SQLItem.RandId,
+		&resetPasswordRequest.SQLItem.CreatedAt,
+		&resetPasswordRequest.SQLItem.UpdatedAt,
+		&resetPasswordRequest.AccountUUID,
+		&resetPasswordRequest.Token,
+		&resetPasswordRequest.ExpiredAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if resetPasswordRequest.ExpiredAt.Before(time.Now().UTC()) {
+		ar.Delete(resetPasswordRequest)
+		newResetPasswordRequest, err := ar.Create(account)
+		if err != nil {
+			return nil, err
+		}
+		return newResetPasswordRequest, nil
+	} else {
+		return nil, definition.RequestExist
+	}
+
+	return resetPasswordRequest, nil
+}
+
+func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) error {
+	tableName := ar.entityName + "ResetPassword"
+	query := "DELETE FROM " + tableName + "ResetPassword WHERE uuid = $1"
+	_, errDelete := ar.db.Exec(query, requestSQL.GetUUID())
+	if errDelete != nil {
+		return errDelete
+	}
 	return nil
 }
 
-func (ar *ResetPasswordManagerSQL) Reset(email string, password string) error {
-	return nil
-}
-
-func NewResetPasswordSQL(db *sql.DB, redis *redis.Client, entityName string) *ResetPasswordManagerSQL {
+func NewResetPasswordManagerSQL(db *sql.DB, redis *redis.Client, entityName string) *ResetPasswordManagerSQL {
 	base := pageflow.NewBase[AccountSQL](redis, entityName+":%s")
 	return &ResetPasswordManagerSQL{
 		base: base,

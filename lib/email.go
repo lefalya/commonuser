@@ -13,7 +13,7 @@ type UpdateEmailRequestSQL struct {
 	PreviousEmailAddress string    `db:"previousemailaddress"`
 	NewEmailAddress      string    `db:"newemailaddress"`
 	UpdateToken          string    `db:"updatetoken"`
-	ExpiredAt            time.Time `db:"expirationdate"`
+	ExpiredAt            time.Time `db:"expiredat"`
 }
 
 func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *AccountSQL) {
@@ -60,19 +60,7 @@ type UpdateEmailManagerSQL struct {
 	entityName string
 }
 
-func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddress string) (*string, error) {
-	request, errFind := em.FindRequest(account)
-	if errFind != nil {
-		return nil, errFind
-	}
-	if request != nil {
-		if request.ExpiredAt.Before(time.Now().UTC()) {
-			em.DeleteRequest(request)
-		} else {
-			return nil, definition.RequestExist
-		}
-	}
-
+func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddress string) (*UpdateEmailRequestSQL, error) {
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
@@ -81,7 +69,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 
 	tableName := em.entityName + "UpdateEmailManagerSQL"
 
-	query := `INSERT INTO ` + tableName + ` (uuid, randId, createdat, updatedat, accountuuid, previousemailaddress, newemailaddress, resettoken) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO ` + tableName + ` (uuid, randId, createdat, updatedat, accountuuid, previousemailaddress, newemailaddress, updatetoken, expiredat) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, errInsert := em.db.Exec(
 		query,
 		updateEmailRequest.GetUUID(),
@@ -91,12 +79,13 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 		updateEmailRequest.AccountUUID,
 		updateEmailRequest.PreviousEmailAddress,
 		updateEmailRequest.NewEmailAddress,
-		updateEmailRequest.UpdateToken)
+		updateEmailRequest.UpdateToken,
+		updateEmailRequest.ExpiredAt)
 	if errInsert != nil {
 		return nil, errInsert
 	}
 
-	return &updateEmailRequest.UpdateToken, nil
+	return updateEmailRequest, nil
 }
 
 func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRequestSQL, error) {
@@ -118,6 +107,17 @@ func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRe
 			return nil, nil
 		}
 		return nil, err
+	}
+
+	if updateEmailRequest.ExpiredAt.Before(time.Now().UTC()) {
+		em.DeleteRequest(updateEmailRequest)
+		newUpdateEmailRequest, err := em.CreateRequest(account, updateEmailRequest.NewEmailAddress)
+		if err != nil {
+			return nil, err
+		}
+		return newUpdateEmailRequest, nil
+	} else {
+		return nil, definition.RequestExist
 	}
 	return updateEmailRequest, nil
 }
