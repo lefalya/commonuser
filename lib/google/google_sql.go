@@ -28,10 +28,33 @@ func NewGoogleSQL() *GoogleSQL {
 	return google
 }
 
+type GoogleManagerSQLInterface interface {
+	SetEntityName(entityName string)
+	Insert(sqlTransaction *sqlx.Tx, google GoogleSQL) (int64, error)
+	Update(sqlTransaction *sqlx.Tx, google GoogleSQL) error
+	Delete(sqlTransaction *sqlx.Tx, google GoogleSQL) error
+	FindByUserUUID(userUUID string) (*GoogleSQL, error)
+	SeedByUserUUID(userUUID string) error
+	FindByUUID(uuid string) (*GoogleSQL, error)
+	SeedByUUID(uuid string) error
+	FindByEmail(email string) (*GoogleSQL, error)
+	SeedByEmail(email string) error
+}
+
 type GoogleManagerSQL struct {
 	db         *sqlx.DB
 	base       *pageflow.Base[GoogleSQL]
 	entityName string
+}
+
+func NewGoogleManagerSQL(db *sqlx.DB, redis *redis.Client, entityName string) GoogleManagerSQLInterface {
+	base := pageflow.NewBase[GoogleSQL](redis, entityName+":%s")
+
+	return &GoogleManagerSQL{
+		db:         db,
+		base:       base,
+		entityName: entityName,
+	}
 }
 
 func (gsql *GoogleManagerSQL) SetEntityName(entityName string) {
@@ -367,18 +390,22 @@ func (gsql *GoogleManagerSQL) SeedByEmail(email string) error {
 	return nil
 }
 
-func NewGoogleManagerSQL(db *sqlx.DB, redis *redis.Client, entityName string) *GoogleManagerSQL {
-	base := pageflow.NewBase[GoogleSQL](redis, entityName+":%s")
-
-	return &GoogleManagerSQL{
-		db:         db,
-		base:       base,
-		entityName: entityName,
-	}
+type GoogleFetchersInterface interface {
+	FetchByUserUUID(userUUID string) (*GoogleSQL, error)
+	FetchByUUID(uuid string) (*GoogleSQL, error)
+	FetchByEmail(email string) (*GoogleSQL, error)
+	FetchByRandId(randId string) (*GoogleSQL, error)
 }
 
 type GoogleFetchers struct {
 	base *pageflow.Base[GoogleSQL]
+}
+
+func NewGoogleFetchers(redis *redis.Client, entityName string) GoogleFetchersInterface {
+	base := pageflow.NewBase[GoogleSQL](redis, entityName+":%s")
+	return &GoogleFetchers{
+		base: base,
+	}
 }
 
 func (gf *GoogleFetchers) FetchByUserUUID(userUUID string) (*GoogleSQL, error) {
