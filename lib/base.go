@@ -1,10 +1,11 @@
 package lib
 
 import (
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lefalya/item"
 	"github.com/matthewhartstonge/argon2"
-	"time"
 )
 
 type UserClaims struct {
